@@ -1,11 +1,9 @@
 #include <xc.h>
 #include "eeprom_routines.h"
 
-void eepromWriteCode(unsigned char codeLenght, char *codeBuffer)
+void eepromWriteCode(unsigned char eepromWriteAddr, unsigned char codeLenght, char *codeBuffer)
 {
-    static unsigned char eepromWriteAddr;
-    
-    eeprom_write(eepromWriteAddr, (codeLenght + 1));    // Store no. of chars in code + codelenght char.
+    eeprom_write(eepromWriteAddr, codeLenght);    // Store no. of chars in code
     for(unsigned char i=0; i <= codeLenght; i++)
     {
         eepromWriteAddr++;

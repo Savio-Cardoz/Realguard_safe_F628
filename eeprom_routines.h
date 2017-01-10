@@ -36,7 +36,7 @@
 static unsigned char eepromCodeBuffer[25];    // Buffer to hold the code read from the EEPROM
 
 char* eepromReadCode(unsigned char codeNo);
-void eepromWriteCode(unsigned char codeLenght, char *codeBuffer);
+void eepromWriteCode(unsigned char eepromWriteAddr, unsigned char codeLenght, char *codeBuffer);
 
 #ifdef	__cplusplus
 extern "C" {

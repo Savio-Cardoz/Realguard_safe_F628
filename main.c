@@ -26,6 +26,9 @@
 
 #define DOOR_SW_OPEN 1
 #define DOOR_SW_CLOSED 0
+#define CODE1ADDR 0x00      /* The preset seek address in EEPROM for code 1 */
+#define CODE2ADDR 0x1B      /*  The preset seek address in EEPROM for code 2.
+                                Codes can have be maximum 25 Chars long */
 
 typedef struct			// Using to access individual bits/pins of a register/port
 {
@@ -53,6 +56,10 @@ typedef struct			// Using to access individual bits/pins of a register/port
 #define DOORSWITCH REGISTER_BIT(PORTA, 5)
 #define ERROR_LED REGISTER_BIT(PORTA, 7)
 
+static unsigned char systemStateReg;
+#define DOORSTATE REGISTER_BIT(systemStateReg, 0)       // 0-Door Closed, 1-Door Open
+#define LASTPASSCODE REGISTER_BIT(systemStateReg, 1)    // 0-Code 1 entered, 1-Code 2 entered
+
 static unsigned char keyPressCount;
 static unsigned char keyBuffer[25];     // Buffer that will hold the values of the keys pressed
 
@@ -62,9 +69,10 @@ unsigned char *eepromCode;
 const unsigned char defaultPassCode[9] = {9,8,7,6,5,4,3,2,1};
 const unsigned char defaultPassCode2[3] = {1,2,3};
 const unsigned char defaultPassCodeLenght = 9;
+const unsigned char defaultPassCode2Lenght = 3;
 
 void ackKeyPress();
-void passcodeCompare(char *keybuffer1, char *keybuffer2, char compareLenght);
+char passcodeCompare(char *keybuffer1, char compareLenght, unsigned char compareAddr);
 
 void initControllerIO()
 {
@@ -95,16 +103,10 @@ int main()
 
     static unsigned char i = 0;
 
-/****************    Testing eeprom routines ***************/
-//    eepromWriteCode(defaultPassCodeLenght, defaultPassCode);
-//    eepromWriteCode(defaultPassCodeLenght, defaultPassCode2);
-//    eepromCode = eepromReadCode(2);
-//    
-//    for(unsigned char i=0; i<9; i++)
-//    {
-//        keyBuffer[i] = *(eepromCode + i);
-//    }
-//    eepromWriteCode(defaultPassCodeLenght, defaultPassCode);
+    /************* Writing the factory default codes to EEPROM ***********/
+    eepromWriteCode(CODE1ADDR, defaultPassCodeLenght, defaultPassCode);
+    eepromWriteCode(CODE2ADDR, defaultPassCode2Lenght, defaultPassCode2);
+    /*********************************************************************/
 
     while(1)
     {
@@ -115,7 +117,18 @@ int main()
             {
                 if(DOORSWITCH == DOOR_SW_OPEN)    // iF DOOR IS CLOSED ENTER ACCESS MODE
                 {
-                    passcodeCompare(keyBuffer, defaultPassCode, keyPressCount);
+                    if(passcodeCompare(keyBuffer, keyPressCount, CODE1ADDR))
+                        LASTPASSCODE = 0;
+                    else if(passcodeCompare(keyBuffer, keyPressCount, CODE2ADDR))
+                        LASTPASSCODE = 1;
+                    else
+                    {
+                        ERROR_LED = 1;
+                        errorTimerTone();
+                        __delay_ms(1000);
+                        ERROR_LED = 0;
+                        T1CON = 0x00;
+                    }
                     keyPressCount = 0;
                     i = 0;          // Flushing of buffer to be better implemented
                 }
@@ -128,7 +141,22 @@ int main()
             
             else if(currentKeypadStatus.keyPressed == SP_FUNC_ENTER)
             {
-                
+                if(DOORSWITCH == DOOR_SW_CLOSED)
+                {
+                    if(LASTPASSCODE == 0)
+                        eepromWriteCode(CODE1ADDR, keyPressCount, keyBuffer);
+                    
+                    if(LASTPASSCODE == 1)
+                        eepromWriteCode(CODE2ADDR, keyPressCount, keyBuffer);
+                    /******** temp ***********/
+                    ACCESS_LED = 1;
+                    okTimerTone();
+                    __delay_ms(1000);
+                    ACCESS_LED = 0;
+                    /*************************/
+                    keyPressCount = 0;
+                    i = 0;          // Flushing Buffer, need better implementation...
+                }
             }
             else{
                 keyBuffer[i] = currentKeypadStatus.keyPressed;
@@ -144,39 +172,38 @@ int main()
     return (EXIT_SUCCESS);
 }
 
-void passcodeCompare(char *keybuffer1, char *keybuffer2, char compareLenght)
+char passcodeCompare(char *keybuffer1, char compareLenght, unsigned char compareAddr)
 {
-    if(compareLenght == defaultPassCodeLenght)      // if it is equal to default passcode size
+    unsigned char storedCodeLenght = eeprom_read(compareAddr);      // The addr provided points to the lenght of the stored code.
+    if(compareLenght == storedCodeLenght)      
     {
         for(unsigned char i=0; i <= (compareLenght-1); i++)
         {
-            if(*keybuffer1 == *keybuffer2)
-            {
+            if(*keybuffer1 == eeprom_read(++compareAddr))
                 *keybuffer1++; 
-                *keybuffer2++;
-            }
             else {
-                ERROR_LED = 1;
-                errorTimerTone();
-                __delay_ms(1000);
-                ERROR_LED = 0;
-                T1CON = 0x00;
-                return;
+//                ERROR_LED = 1;
+//                errorTimerTone();
+//                __delay_ms(1000);
+//                ERROR_LED = 0;
+//                T1CON = 0x00;
+                return 0;
             };
         }
         ACCESS_LED = 1;
         okTimerTone();
-        __delay_ms(3800);
+        while(DOORSWITCH == DOOR_SW_OPEN);
         ACCESS_LED = 0;
+        return 1;
     }
     
     else {
-        ERROR_LED = 1;
-        errorTimerTone();
-        __delay_ms(1000);
-        ERROR_LED = 0;
-        T1CON = 0x00;
-        return;
+//        ERROR_LED = 1;
+//        errorTimerTone();
+//        __delay_ms(1000);
+//        ERROR_LED = 0;
+//        T1CON = 0x00;
+        return 0;
     };
 }
 
